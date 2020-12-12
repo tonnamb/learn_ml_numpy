@@ -15,7 +15,8 @@ class LinearChainCRF:
     phi_t_yt_yt-1_xt = exp sum_k theta_k * f_k_yt_yt-1_xt
 
     Reference:
-        Sutton and McCallum 2011 https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
+        Sutton and McCallum 2011
+        https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
     """
     BEGIN_LABEL = '<BEGIN>'
     BEGIN_LABEL_IDX = -1
@@ -36,8 +37,10 @@ class LinearChainCRF:
 
         # transitions are defined as tuple of (y_tlag, y_t)
         begin_transition = [(self.BEGIN_LABEL, label) for label in labels]
-        transitions = begin_transition + list(variations(labels, 2, repetition=True))
-        self.transition_map = {transition: idx for idx, transition in enumerate(transitions)}
+        transitions = (begin_transition +
+                       list(variations(labels, 2, repetition=True)))
+        self.transition_map = {transition: idx
+                               for idx, transition in enumerate(transitions)}
         self.x_transition_map = {idx: one_hot for idx, one_hot
                                  in enumerate(np.eye(len(transitions)))}
         self.theta = np.random.standard_normal(n_features + len(transitions))
@@ -59,7 +62,7 @@ class LinearChainCRF:
             y.shape is (n_samples, n_timesteps)
 
         Returns the log likelihood of the last iteration.
-        
+
         Paragraph above Eq. (4.19)
         Z = b_0_y0 or sum_i a_T_i
 
@@ -80,8 +83,14 @@ class LinearChainCRF:
             betas = [self.beta_backward(x) for x in X_batch]
             Zs = [b[0, self.BEGIN_LABEL_IDX] for b in betas]
             log_likelihood = self.log_likelihood(X_batch, y_batch, Zs, sigma)
-            dL_dtheta = self.dL_dtheta(X_batch, y_batch, Zs, sigma,
-                                       batch_size, n_samples)
+            dL_dtheta = self.dL_dtheta(X_batch,
+                                       y_batch,
+                                       alphas,
+                                       betas,
+                                       Zs,
+                                       sigma,
+                                       batch_size,
+                                       n_samples)
             lr_m = 1 / (sigma ** 2 * (m_0 * iteration_num))
             self.theta = self.theta + lr_m * dL_dtheta
             if iteration_num % batch_size == 0:
@@ -90,7 +99,6 @@ class LinearChainCRF:
                 print(f"Log likelihood: {log_likelihood:.3f}")
             iteration_num += 1
         return log_likelihood
-        
 
     def predict(self,
                 X: List[List[np.ndarray]]
@@ -100,7 +108,7 @@ class LinearChainCRF:
 
         Args:
             X.shape is (n_samples, n_timesteps, n_features)
-        
+
         Returns:
             y.shape is (n_samples, n_timesteps)
 
@@ -110,7 +118,7 @@ class LinearChainCRF:
         Eq. (4.16)
         d_t_j = max_i phi_t_j_i * d_t-1_i
 
-        Once d_t_j are computed, assignments can be done by backward recursion:
+        Once d_t_j are computed, assignments can be done by backward recursion
             y_T = argmax_i d_T_i
             y_t = argmax_i phi_t_yt+1_i_xt * d_t_i
 
@@ -129,23 +137,30 @@ class LinearChainCRF:
             for t, x_t in enumerate(x_sample):
                 for y_t in self.label_indexes:
                     if t == 0:
-                        d_t_j[(0, y_t)] = self.factor(y_t, self.BEGIN_LABEL_IDX, x_t)
+                        d_t_j[(0, y_t)] = self.factor(y_t,
+                                                      self.BEGIN_LABEL_IDX,
+                                                      x_t)
                     else:
                         d_t_j[(t, y_t)] = max(phi * d_t_j[(t - 1, y_tlag)]
                                               for y_tlag in self.label_indexes
-                                              for phi in self.factor(y_t, y_tlag, x_t))
+                                              for phi in self.factor(y_t,
+                                                                     y_tlag,
+                                                                     x_t))
             y.append([])
             for t in reversed(range(len(x_sample))):
                 t_max = len(x_sample) - 1
                 if t == t_max:
                     y[sample_idx].append(
-                        np.argmax(d_t_j[(t, y_t)] for y_t in self.label_indexes)
+                        np.argmax(d_t_j[(t, y_t)]
+                                  for y_t in self.label_indexes)
                     )
                 else:
                     y[sample_idx].append(
                         np.argmax(
                             # `y[sample_idx][-1]` is the predicted y_t+1
-                            self.factor(y[sample_idx][-1], y_t, x_sample[t + 1]) * d_t_j[(t, y_t)]
+                            self.factor(y[sample_idx][-1],
+                                        y_t,
+                                        x_sample[t + 1]) * d_t_j[(t, y_t)]
                             for y_t in self.label_indexes
                         )
                     )
@@ -216,7 +231,9 @@ class LinearChainCRF:
                 else:
                     alpha[t, y_t] = np.sum([phi * alpha[t - 1, y_tlag]
                                             for y_tlag in self.label_indexes
-                                            for phi in self.factor(y_t, y_tlag, x_t)])
+                                            for phi in self.factor(y_t,
+                                                                   y_tlag,
+                                                                   x_t)])
         return alpha
 
     def beta_backward(self,
@@ -245,13 +262,17 @@ class LinearChainCRF:
                     beta[t, y_tlag] = np.sum(
                         [phi * beta[t + 1, y_t]
                          for y_t in self.label_indexes
-                         for phi in self.factor(y_t, y_tlag, x_one_sample[t + 1])]
+                         for phi in self.factor(y_t,
+                                                y_tlag,
+                                                x_one_sample[t + 1])]
                     )
             if t == 0:
                 beta[0, self.BEGIN_LABEL_IDX] = np.sum(
                     [phi * beta[t + 1, y_t]
                      for y_t in self.label_indexes
-                     for phi in self.factor(y_t, self.BEGIN_LABEL_IDX, x_one_sample[t + 1])]
+                     for phi in self.factor(y_t,
+                                            self.BEGIN_LABEL_IDX,
+                                            x_one_sample[t + 1])]
                 )
         return beta
 
@@ -268,7 +289,7 @@ class LinearChainCRF:
             X.shape is (n_samples, n_timesteps, n_features)
             y.shape is (n_samples, n_timesteps)
             Zs.shape is (n_samples)
-        
+
         L = sum_data log p(y|x)
           = sum_data log 1/Z product_t phi_t_yt_yt-1_xt
           = sum_data sum_t log phi_t_yt_yt-1_xt - log Z
@@ -276,10 +297,15 @@ class LinearChainCRF:
         phi_t_yt_yt-1_xt = exp sum_k theta_k * f_k_yt_yt-1_xt
 
         Eq. (5.4) - log likelihood with L2 ridge regularization
-        L = sum_data sum_t sum_k theta_k * f_k_yt_yt-1_xt - sum_data log Z - sum_k theta_k^2 / (2 * sigma^2)
-        L = sum_data sum_t log phi_t_yt_yt-1_xt - sum_data log Z - sum_k theta_k^2 / (2 * sigma^2)
+        L = sum_data sum_t sum_k theta_k * f_k_yt_yt-1_xt
+            - sum_data log Z
+            - sum_k theta_k^2 / (2 * sigma^2)
+        L = sum_data sum_t log phi_t_yt_yt-1_xt
+            - sum_data log Z
+            - sum_k theta_k^2 / (2 * sigma^2)
         """
-        log_likelihood = np.sum(np.square(self.theta)) / (2 * sigma ** 2) - np.sum(np.log(Zs))
+        log_likelihood = (np.sum(np.square(self.theta)) / (2 * sigma ** 2)
+                          - np.sum(np.log(Zs)))
         for x_sequence, y_sequence in zip(X, y):
             for t, x_t in enumerate(x_sequence):
                 log_likelihood += np.log(
@@ -313,8 +339,9 @@ class LinearChainCRF:
         dL_i/dtheta_k = sum_data sum_t f_k_yt_yt-1_xt
                         - sum_data sum_t sum_y_y' f_k_y_y'_xt * p(y,y'|x)
                         - (theta_k * batch_size) / (N * sigma^2)
-        (Eq. (5.20) was for batch_size = 1, so added the batch_size multiplication)
-        
+        (Eq. (5.20) was for batch_size = 1,
+         so added the batch_size multiplication)
+
         Eq. (4.19)
         p(yt-1,yt|x) = 1/Z * a_t-1_yt-1 * phi_t_yt_yt-1_xt * b_t_yt
         """
@@ -326,11 +353,11 @@ class LinearChainCRF:
                 # element-wise addition between list of `np.ndarray` to form
                 # 1 `np.ndarray`
                 dL -= sum(self.x_concat(y_t, y_tlag, x_t)
-                             * alphas[s_idx][t, y_tlag]
-                             * self.factor(y_t, y_tlag, x_t)
-                             * betas[s_idx][t, y_t]
-                             / Zs[s_idx]
-                             for y_t in self.label_indexes
-                             for y_tlag in self.label_indexes)
+                          * alphas[s_idx][t, y_tlag]
+                          * self.factor(y_t, y_tlag, x_t)
+                          * betas[s_idx][t, y_t]
+                          / Zs[s_idx]
+                          for y_t in self.label_indexes
+                          for y_tlag in self.label_indexes)
                 dL -= self.theta * batch_size / (n_samples * sigma ** 2)
         return dL

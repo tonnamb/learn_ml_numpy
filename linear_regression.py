@@ -27,7 +27,8 @@ class LinearRegression:
 
         loss = |X @ beta - y|^2
              = (X @ beta - y).T @ (X @ beta - y)
-             = y.T @ y - y.T @ X @ beta - beta.T @ X.T @ y + beta.T @ X.T @ X @ beta
+             = y.T @ y - y.T @ X @ beta - beta.T @ X.T @ y
+               + beta.T @ X.T @ X @ beta
 
         d(loss)/d(beta) = -y.T @ X - X.T @ y + 2 beta.T @ X.T @ X
                         = -2 y.T @ X + 2 beta.T @ X.T @ X
@@ -53,11 +54,12 @@ class LinearRegression:
 
 
 def demo_linear_regression(*,
-                           noise_scale = 0.1,
-                           n_samples = 100,
-                           true_beta = [0.1, 0.5, 0.9, 0.1, 0.7]) -> None:
+                           noise_scale=0.1,
+                           n_samples=100,
+                           true_beta=[0.1, 0.5, 0.9, 0.1, 0.7]) -> None:
     """
-    Try adjusting `noise_scale` and see how the fitted beta and mean-squared loss changes.
+    Try adjusting `noise_scale` and see how the fitted beta
+    and mean-squared loss changes.
     """
     n_features = len(true_beta)
     X = np.random.rand(n_samples, n_features)
@@ -68,7 +70,7 @@ def demo_linear_regression(*,
     linear_model = LinearRegression(fit_intercept=False)
     linear_model.fit(X, y)
     y_pred = linear_model.predict(X)
-    
+
     diff = y_pred - y
     msl = np.sum(diff.T @ diff) / n_samples
     print(f"noise_scale = {noise_scale}")
