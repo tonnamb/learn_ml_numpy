@@ -22,3 +22,5 @@ Run the linear regression model by:
 ```
 make linear
 ```
+
+See `Makefile` for more commands that can be run.

@@ -1,5 +1,9 @@
 """
-CRF implementation and demo.
+Conditional random field (CRF) implementation and demo.
+
+Reference:
+- Sutton C, McCallum A. An introduction to conditional random fields.
+  2011. https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
 """
 import random
 from functools import lru_cache
@@ -11,12 +15,9 @@ from sympy.utilities.iterables import variations
 
 class LinearChainCRF:
     """
+    Eq. (2.18)
     p(y|x) = 1/Z product_t phi_t_yt_yt-1_xt
     phi_t_yt_yt-1_xt = exp sum_k theta_k * f_k_yt_yt-1_xt
-
-    Reference:
-        Sutton and McCallum 2011
-        https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
     """
     BEGIN_LABEL = '<BEGIN>'
     BEGIN_LABEL_IDX = -1

@@ -1,5 +1,9 @@
 """
 Linear regression implementation and demo.
+
+Reference:
+- Friedman J, Hastie T, Tibshirani R. The elements of statistical learning.
+  2001. Chapter 3.2
 """
 
 import numpy as np
