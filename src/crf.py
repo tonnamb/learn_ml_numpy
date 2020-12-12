@@ -131,7 +131,8 @@ class LinearChainCRF:
             d_2_1 = max(phi_2_1_0 * phi_1_0_y0,
                         phi_2_1_1 * phi_1_1_y0)
         """
-        y = []
+        y_idx: List[List[int]] = []
+        y: List[List[str]] = []
         for sample_idx, x_sample in enumerate(X):
             d_t_j = {}
             for t, x_t in enumerate(x_sample):
@@ -141,32 +142,34 @@ class LinearChainCRF:
                                                       self.BEGIN_LABEL_IDX,
                                                       x_t)
                     else:
-                        d_t_j[(t, y_t)] = max(phi * d_t_j[(t - 1, y_tlag)]
-                                              for y_tlag in self.label_indexes
-                                              for phi in self.factor(y_t,
-                                                                     y_tlag,
-                                                                     x_t))
-            y.append([])
+                        d_t_j[(t, y_t)] = max(
+                            self.factor(y_t,
+                                        y_tlag,
+                                        x_t) * d_t_j[(t - 1, y_tlag)]
+                            for y_tlag in self.label_indexes
+                        )
+            y_idx.append([])
             for t in reversed(range(len(x_sample))):
                 t_max = len(x_sample) - 1
                 if t == t_max:
-                    y[sample_idx].append(
+                    y_idx[sample_idx].append(
                         np.argmax(d_t_j[(t, y_t)]
                                   for y_t in self.label_indexes)
                     )
                 else:
-                    y[sample_idx].append(
+                    y_idx[sample_idx].append(
                         np.argmax(
                             # `y[sample_idx][-1]` is the predicted y_t+1
-                            self.factor(y[sample_idx][-1],
+                            self.factor(y_idx[sample_idx][-1],
                                         y_t,
                                         x_sample[t + 1]) * d_t_j[(t, y_t)]
                             for y_t in self.label_indexes
                         )
                     )
             # Reverse `y` since it was appended in reverse order.
-            # Also, map label_idx back to label string.
-            y[sample_idx] = reversed(self.full_label_map[y[sample_idx]])
+            # Also, map `label_idx` back to label string.
+            y.append([self.full_label_map[label_idx]
+                      for label_idx in reversed(y_idx[sample_idx])])
         return y
 
     @lru_cache(maxsize=10000)
@@ -183,7 +186,8 @@ class LinearChainCRF:
         Returns:
             x_concat.shape is (n_features + n_transitions)
         """
-        transition_idx = self.transition_map[(y_tlag, y_t)]
+        transition_idx = self.transition_map[(self.full_label_map[y_tlag],
+                                              self.full_label_map[y_t])]
         x_transition = self.x_transition_map[transition_idx]
         x_concat = np.concatenate([x_t, x_transition])
         return x_concat
@@ -229,11 +233,12 @@ class LinearChainCRF:
                 if t == 0:
                     alpha[0, y_t] = self.factor(y_t, self.BEGIN_LABEL_IDX, x_t)
                 else:
-                    alpha[t, y_t] = np.sum([phi * alpha[t - 1, y_tlag]
-                                            for y_tlag in self.label_indexes
-                                            for phi in self.factor(y_t,
-                                                                   y_tlag,
-                                                                   x_t)])
+                    alpha[t, y_t] = np.sum(
+                        [self.factor(y_t,
+                                     y_tlag,
+                                     x_t) * alpha[t - 1, y_tlag]
+                         for y_tlag in self.label_indexes]
+                    )
         return alpha
 
     def beta_backward(self,
@@ -260,19 +265,17 @@ class LinearChainCRF:
                     beta[t, y_tlag] = 1
                 elif t > 0:
                     beta[t, y_tlag] = np.sum(
-                        [phi * beta[t + 1, y_t]
-                         for y_t in self.label_indexes
-                         for phi in self.factor(y_t,
-                                                y_tlag,
-                                                x_one_sample[t + 1])]
+                        [self.factor(y_t,
+                                     y_tlag,
+                                     x_one_sample[t + 1]) * beta[t + 1, y_t]
+                         for y_t in self.label_indexes]
                     )
             if t == 0:
                 beta[0, self.BEGIN_LABEL_IDX] = np.sum(
-                    [phi * beta[t + 1, y_t]
-                     for y_t in self.label_indexes
-                     for phi in self.factor(y_t,
-                                            self.BEGIN_LABEL_IDX,
-                                            x_one_sample[t + 1])]
+                    [self.factor(y_t,
+                                 self.BEGIN_LABEL_IDX,
+                                 x_one_sample[t + 1]) * beta[t + 1, y_t]
+                     for y_t in self.label_indexes]
                 )
         return beta
 
