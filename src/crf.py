@@ -6,6 +6,7 @@ Reference:
   2011. https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
 """
 import random
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import List, Tuple
 
@@ -23,10 +24,15 @@ class LinearChainCRF:
     BEGIN_LABEL_IDX = -1
 
     def __init__(self,
-                 labels: Tuple[str],
+                 labels: List[str],
                  n_features: int) -> None:
         """
-        self.theta.shape is (n_features + n_transitions)
+        Args:
+            labels: list of labels
+            n_features: number of features
+
+        Attributes:
+            self.theta.shape is (n_features + n_transitions)
         """
         self.n_features = n_features
         self.labels = labels
@@ -365,3 +371,68 @@ class LinearChainCRF:
                           for y_tlag in self.label_indexes)
                 dL -= self.theta * batch_size / (n_samples * sigma ** 2)
         return dL
+
+
+@dataclass(frozen=True)
+class CoNLLChunking:
+    word: List[List[str]] = field(default_factory=list)
+    pos: List[List[str]] = field(default_factory=list, repr=False)
+    label: List[List[str]] = field(default_factory=list, repr=False)
+
+
+def read_conll_2000_chunking(file_path: str) -> CoNLLChunking:
+    """
+    Read CoNLL 2000 chunking file, downloaded from
+    https://www.clips.uantwerpen.be/conll2000/chunking/
+    """
+    out = CoNLLChunking()
+    out.word.append([])
+    out.pos.append([])
+    out.label.append([])
+    sample_idx = 0
+    with open(file_path) as conll_file:
+        for line in conll_file:
+            elements = line.strip().split()
+            if len(elements) == 0:
+                out.word.append([])
+                out.pos.append([])
+                out.label.append([])
+                sample_idx += 1
+            else:
+                word, part_of_speech, label = elements
+                out.word[sample_idx].append(word)
+                out.pos[sample_idx].append(part_of_speech)
+                out.label[sample_idx].append(label)
+    return out
+
+
+def prepare(data: CoNLLChunking
+            ) -> Tuple[List[List[np.ndarray]],
+                       List[List[str]]]:
+    """
+    Prepare CoNLL chunking data for the CRF model.
+
+    Returns:
+        X.shape is (n_samples, n_timesteps, n_features) where the features are
+            concatenated one-hot vectors of the word and part-of-speech.
+        y.shape is (n_samples, n_timesteps)
+    """
+    vocab_to_int = {}
+    pos_to_int = {}
+    int_to_vocab = {}
+    int_to_pos = {}
+    idx_vocab = 0
+    idx_pos = 0
+    for word_sample, pos_sample in zip(data.word, data.pos):
+        for word, pos in zip(word_sample, pos_sample):
+            if word not in vocab_to_int:
+                
+    
+    X = 
+    y = data.label
+
+
+if __name__ == "__main__":
+    train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
+    test = read_conll_2000_chunking('data/conll_2000_chunking_test.txt')
+

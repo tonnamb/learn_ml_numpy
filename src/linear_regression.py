@@ -84,7 +84,6 @@ def demo_linear_regression(*,
 
 
 if __name__ == "__main__":
-    print()
     for noise in [0.1, 0.5, 1]:
         demo_linear_regression(noise_scale=noise)
         print()
