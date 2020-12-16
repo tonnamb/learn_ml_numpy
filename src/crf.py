@@ -8,7 +8,7 @@ Reference:
 import random
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import List, Tuple
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 from sympy.utilities.iterables import variations
@@ -41,6 +41,7 @@ class LinearChainCRF:
         self.label_indexes = self.label_map.keys()
         self.full_label_map = self.label_map.copy()
         self.full_label_map[self.BEGIN_LABEL_IDX] = self.BEGIN_LABEL
+        self.label_to_idx = {label: idx for idx, label in self.full_label_map.items()}
 
         # transitions are defined as tuple of (y_tlag, y_t)
         begin_transition = [(self.BEGIN_LABEL, label) for label in labels]
@@ -179,7 +180,6 @@ class LinearChainCRF:
                       for label_idx in reversed(y_idx[sample_idx])])
         return y
 
-    @lru_cache(maxsize=10000)
     def x_concat(self,
                  y_t: int,
                  y_tlag: int,
@@ -199,7 +199,6 @@ class LinearChainCRF:
         x_concat = np.concatenate([x_t, x_transition])
         return x_concat
 
-    @lru_cache(maxsize=10000)
     def factor(self,
                y_t: int,
                y_tlag: int,
@@ -234,7 +233,7 @@ class LinearChainCRF:
         a_1_j = phi_1_j_y0_x1
         """
         n_timesteps = len(x_one_sample)
-        alpha = np.zeros(n_timesteps, self.n_labels)
+        alpha = np.zeros((n_timesteps, self.n_labels))
         for t, x_t in enumerate(x_one_sample):
             for y_t in self.label_indexes:
                 if t == 0:
@@ -265,11 +264,11 @@ class LinearChainCRF:
         b_T_i = 1
         """
         n_timesteps = len(x_one_sample)
-        beta = np.zeros(n_timesteps, self.n_labels)
+        beta = np.ones((n_timesteps, self.n_labels))
         for t in reversed(range(n_timesteps)):
             for y_tlag in self.label_indexes:
                 if t == (n_timesteps - 1):
-                    beta[t, y_tlag] = 1
+                    beta[t, y_tlag] = 1.0
                 elif t > 0:
                     beta[t, y_tlag] = np.sum(
                         [self.factor(y_t,
@@ -318,9 +317,9 @@ class LinearChainCRF:
                           - np.sum(np.log(Zs)))
         for x_sequence, y_sequence in zip(X, y):
             for t, x_t in enumerate(x_sequence):
-                log_likelihood += np.log(
-                    self.factor(y_sequence[t], y_sequence[t - 1], x_t)
-                )
+                y_t = self.label_to_idx[y_sequence[t]]
+                y_tlag = self.label_to_idx[y_sequence[t - 1]]
+                log_likelihood += np.log(self.factor(y_t, y_tlag, x_t))
         return log_likelihood
 
     def dL_dtheta(self,
@@ -358,7 +357,9 @@ class LinearChainCRF:
         dL = np.zeros_like(self.theta)
         for s_idx, (x_sequence, y_sequence) in enumerate(zip(X, y)):
             for t, x_t in enumerate(x_sequence):
-                dL += self.x_concat(y_sequence[t], y_sequence[t - 1], x_t)
+                y_t = self.label_to_idx[y_sequence[t]]
+                y_tlag = self.label_to_idx[y_sequence[t - 1]]
+                dL += self.x_concat(y_t, y_tlag, x_t)
                 # Using `sum` instead of `np.sum` because the intent is to do
                 # element-wise addition between list of `np.ndarray` to form
                 # 1 `np.ndarray`
@@ -406,33 +407,82 @@ def read_conll_2000_chunking(file_path: str) -> CoNLLChunking:
     return out
 
 
-def prepare(data: CoNLLChunking
+def prepare(data: CoNLLChunking, *,
+            vocab_to_int: Dict[str, int] = None,
+            pos_to_int: Dict[str, int] = None
             ) -> Tuple[List[List[np.ndarray]],
-                       List[List[str]]]:
+                       List[List[str]],
+                       Dict[str, int],
+                       Dict[str, int]]:
     """
     Prepare CoNLL chunking data for the CRF model.
 
+    Args:
+        data: CoNLL 2000 Chunking data
+        vocab_to_int, pos_to_int:
+            When mappings are passed in, it will use it instead of building
+            new mappings.
+
     Returns:
-        X.shape is (n_samples, n_timesteps, n_features) where the features are
-            concatenated one-hot vectors of the word and part-of-speech.
-        y.shape is (n_samples, n_timesteps)
+        X:
+            Shape of (n_samples, n_timesteps, n_features), where the features
+            are concatenated one-hot vectors of the word and part-of-speech.
+        y:
+            Shape of (n_samples, n_timesteps).
+        vocab_to_int:
+            Mapping of word to index.
+        pos_to_int:
+            Mapping of part-of-speech to index.
     """
-    vocab_to_int = {}
-    pos_to_int = {}
-    int_to_vocab = {}
-    int_to_pos = {}
-    idx_vocab = 0
-    idx_pos = 0
-    for word_sample, pos_sample in zip(data.word, data.pos):
+    if vocab_to_int is None and pos_to_int is None:
+        # Build vocab and pos mappings.
+        vocab_to_int = {}
+        pos_to_int = {}
+        idx_vocab = 0
+        idx_pos = 0
+        for word_sample, pos_sample in zip(data.word, data.pos):
+            for word, pos in zip(word_sample, pos_sample):
+                if word not in vocab_to_int:
+                    vocab_to_int[word] = idx_vocab
+                    idx_vocab += 1
+                if pos not in pos_to_int:
+                    pos_to_int[pos] = idx_pos
+                    idx_pos += 1
+
+    # Build one-hot vectors
+    n_vocab = len(vocab_to_int)
+    n_pos = len(pos_to_int)
+    n_features = n_vocab + n_pos
+    eye_vocab = np.eye(n_vocab)
+    eye_pos = np.eye(n_pos)
+    X = []
+    for sample, (word_sample, pos_sample) in enumerate(zip(data.word,
+                                                           data.pos)):
+        X.append([])
         for word, pos in zip(word_sample, pos_sample):
-            if word not in vocab_to_int:
-                
-    
-    X = 
+            vocab_int = vocab_to_int[word]
+            pos_int = pos_to_int[pos]
+            one_hot = np.concatenate((eye_vocab[vocab_int], eye_pos[pos_int]))
+            X[sample].append(one_hot)
     y = data.label
+    return X, y, vocab_to_int, pos_to_int
+
+
+def labels(data: CoNLLChunking) -> Set[str]:
+    """
+    Obtain labels from data.
+    """
+    return {label for l_samples in data.label for label in l_samples}
 
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
-    test = read_conll_2000_chunking('data/conll_2000_chunking_test.txt')
-
+    # test = read_conll_2000_chunking('data/conll_2000_chunking_test.txt')
+    labels_train = labels(train)
+    # labels_test = labels(test)
+    X_train, y_train, vocab_to_int, pos_to_int = prepare(train)
+    # X_test, y_test, _, _ = prepare(test, vocab_to_int=vocab_to_int, pos_to_int=pos_to_int)
+    n_features = len(vocab_to_int) + len(pos_to_int)
+    crf = LinearChainCRF(labels_train, n_features)
+    crf.fit(X_train, y_train)
+    # y_train_pred = crf.predict(X_train)

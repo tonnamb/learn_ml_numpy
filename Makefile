@@ -18,4 +18,7 @@ data:
 	gunzip data/conll_2000_chunking_test.txt.gz
 
 linear: pyvenv
-	pyvenv/bin/python src/linear_regression.py
+	pyvenv/bin/python -i src/linear_regression.py
+
+crf: pyvenv
+	pyvenv/bin/python -i src/crf.py
