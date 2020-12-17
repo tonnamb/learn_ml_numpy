@@ -59,7 +59,7 @@ class LinearChainCRF:
             *,
             n_epochs: int = 5,
             batch_size: int = 10,
-            sigma: float = 1.0,
+            sigma: float = 1000.0,
             m_0: float = 0.1) -> float:
         """
         Parameter estimation via maximum likelihood using stochastic gradient
@@ -477,12 +477,8 @@ def labels(data: CoNLLChunking) -> Set[str]:
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
-    # test = read_conll_2000_chunking('data/conll_2000_chunking_test.txt')
     labels_train = labels(train)
-    # labels_test = labels(test)
     X_train, y_train, vocab_to_int, pos_to_int = prepare(train)
-    # X_test, y_test, _, _ = prepare(test, vocab_to_int=vocab_to_int, pos_to_int=pos_to_int)
     n_features = len(vocab_to_int) + len(pos_to_int)
     crf = LinearChainCRF(labels_train, n_features)
     crf.fit(X_train, y_train)
-    # y_train_pred = crf.predict(X_train)
