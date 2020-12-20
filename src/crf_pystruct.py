@@ -82,7 +82,7 @@ class ChainCRF():
                       x: np.ndarray,
                       y: np.ndarray) -> np.ndarray:
         """
-        Feature vector of length `n_labels * n_features + n_labels ** 2`.
+        Feature vector of length `size_joint_feature`.
         Contains the unary and pairwise features.
 
         Args:
@@ -117,8 +117,9 @@ class ChainCRF():
                             X: List[np.ndarray],
                             Y: List[np.ndarray]) -> np.ndarray:
         """
-        Summed feature vector across data batch of length
-        `n_labels * n_features + n_labels ** 2`.
+        Summed feature vector across data batch of length `size_joint_feature`
+
+        Called by learner during `fit`.
 
         Args: see `initialize` method.
         """
@@ -160,13 +161,99 @@ class ChainCRF():
                                  y: np.ndarray,
                                  w: np.ndarray):
         """
+        Make inference given x, y, and w.
 
+        Args:
+            x: see `joint_feature` method.
+            y: see `joint_feature` method.
+            w:
+                Weight parameters for the CRF energy function.
+                numpy vector of length `size_joint_feature`.
         """
+        unary_potentials = self._get_unary_potentials(x, w)
+        pairwise_potentials = self._get_pairwise_potentials(w)
+        edges = make_chain_edges(x)
+
+        if self.class_weight:
+            self.loss_augment_unaries(unary_potentials, y, w)
+
+        return inference_dispatch()
 
     def batch_loss_augmented_inference(self,
                                        X: List[np.ndarray],
                                        Y: List[np.ndarray],
                                        w: np.ndarray):
+        """
+        Make inference for each row of data given w as model parameter.
+
+        Called by learner during `fit`.
+
+        Args:
+            X: see `initialize` method.
+            Y: see `initialize` method.
+            w: see `loss_augmented_inference` method.
+        """
+        return [self.loss_augmented_inference(x, y, w) for x, y in zip(X, Y)]
+
+    def _get_unary_potentials(self,
+                              x: np.ndarray,
+                              w: np.ndarray) -> np.ndarray:
+        """
+        Computes unary potentials for given x and w.
+
+        Returns numpy array of shape (n_nodes, n_labels).
+
+        Args:
+            x: see `joint_feature` method.
+            w: see `loss_augmented_inference` method.
+        """
+        unary_params = (
+            w[:self.n_labels * self.n_features]
+            .reshape(self.n_labels, self.n_features)
+        )
+        return x @ unary_params.T
+
+    def _get_pairwise_potentials(self,
+                                 w: np.ndarray) -> np.ndarray:
+        """
+        Computes pairwise potentials for given w.
+
+        Returns numpy array of shape (n_labels, n_labels).
+
+        Args:
+            w: see `loss_augmented_inference` method.
+        """
+        pairwise_params = (
+            w[self.n_labels * self.n_features:]
+            .reshape(self.n_labels, self.n_labels)
+        )
+        return pairwise_params
+
+    def loss_augment_unaries(self,
+                             unary_potentials: np.ndarray,
+                             y: np.ndarray,
+                             w: np.ndarray) -> None:
+        """
+        Add class weights to unary potentials.
+
+        Only add class weight when the label is not equal to the observed y
+        for the node.
+
+        Args:
+            unary_potentials: numpy array of shape (n_nodes, n_labels).
+            y: see `joint_feature` method.
+            w: see `loss_augmented_inference` method.
+        """
+        n_nodes = unary_potentials.shape[0]
+        weight_to_add = np.tile(self.class_weight, (n_nodes, 1))
+        mask = (
+            np.array([True if label == y[i] else False
+                      for i in range(n_nodes)
+                      for label in range(self.n_labels)])
+            .reshape(n_nodes, self.n_labels)
+        )
+        weight_to_add[mask] = 0.
+        unary_potentials += weight_to_add
 
 
 def make_chain_edges(x: np.ndarray) -> np.ndarray:
