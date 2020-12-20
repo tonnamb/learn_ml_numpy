@@ -1,9 +1,15 @@
 """
-CRF implemented like `pystruct`
+`pystruct`-style implementation of the CRF.
+
+Reference: https://github.com/pystruct/pystruct
 """
 from typing import List, Tuple
 
 import numpy as np
+
+
+NEG_INF = -np.inf
+
 
 class ChainCRF():
     """
@@ -155,29 +161,55 @@ class ChainCRF():
                 which are numpy vectors of length `n_nodes`.
         """
         return [self.loss(y, y_hat) for y, y_hat in zip(Y, Y_hat)]
-    
-    def loss_augmented_inference(self,
-                                 x: np.ndarray,
-                                 y: np.ndarray,
-                                 w: np.ndarray):
+
+    def inference(self,
+                  x: np.ndarray,
+                  w: np.ndarray) -> np.ndarray:
         """
-        Make inference given x, y, and w.
+        Inference for x using parameters w.
+
+        Finds (approximately)
+        argmin_y_hat w @ joint_feature(x, y_hat) + loss(y, y_hat)
+
+        Returns labels prediction as numpy vector of length `n_nodes`.
 
         Args:
             x: see `joint_feature` method.
-            y: see `joint_feature` method.
             w:
                 Weight parameters for the CRF energy function.
                 numpy vector of length `size_joint_feature`.
         """
         unary_potentials = self._get_unary_potentials(x, w)
         pairwise_potentials = self._get_pairwise_potentials(w)
-        edges = make_chain_edges(x)
+
+        return inference_viterbi(unary_potentials, pairwise_potentials)
+    
+    def loss_augmented_inference(self,
+                                 x: np.ndarray,
+                                 y: np.ndarray,
+                                 w: np.ndarray) -> np.ndarray:
+        """
+        Loss-augmented inference for x relative to y using parameters w.
+
+        Finds (approximately)
+        argmin_y_hat w @ joint_feature(x, y_hat) + loss(y, y_hat)
+
+        Returns labels prediction as numpy vector of length `n_nodes`.
+
+        Args:
+            x: see `joint_feature` method.
+            y:
+                Ground truth labels for loss calculation.
+                See `joint_feature` method. 
+            w: see `inference` method.
+        """
+        unary_potentials = self._get_unary_potentials(x, w)
+        pairwise_potentials = self._get_pairwise_potentials(w)
 
         if self.class_weight:
             self.loss_augment_unaries(unary_potentials, y, w)
 
-        return inference_dispatch()
+        return inference_viterbi(unary_potentials, pairwise_potentials)
 
     def batch_loss_augmented_inference(self,
                                        X: List[np.ndarray],
@@ -279,4 +311,23 @@ def make_chain_edges(x: np.ndarray) -> np.ndarray:
     edge_end = vertices[1:, np.newaxis]
     edges = np.concatenate([edge_begin, edge_end], axis=1)
     return edges
+
+
+def inference_viterbi(unary_potentials: np.ndarray,
+                      pairwise_potentials: np.ndarray) -> np.ndarray:
+    """
+    Max-product inference via first-order Viterbi algorithm.
+
+    Returns labels prediction as numpy vector of length `n_nodes`.
+
+    Args:
+        unary_potentials: numpy array of shape (n_nodes, n_labels).
+        pairwise_potentials: numpy array of shape (n_labels, n_labels).
+    """
+    n_nodes = unary_potentials.shape[0]
+    n_labels = unary_potentials.shape[1]
+    max_values = np.zeros((n_nodes, n_labels))
+    max_indices = np.zeros((n_nodes, n_labels))
+
+    # Forward recursion.
 
