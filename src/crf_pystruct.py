@@ -1,7 +1,7 @@
 """
 CRF implemented like `pystruct`
 """
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 
@@ -40,8 +40,9 @@ class ChainCRF():
             X:
                 List of numpy array of shape (n_nodes, n_features).
             Y:
-                List of numpy array of shape (n_nodes, ).
+                List of numpy vector of length `n_nodes`.
                 The number of unique values should match `n_labels`.
+                Labels should be encoded as integers of 0 to `n_labels - 1`.
         """
         # Infer `n_features` from data.
         n_features = X[0].shape[1]
@@ -61,9 +62,9 @@ class ChainCRF():
                              f"got {n_labels}.")
 
         # Size of `joint_feature` for directed graphs.
-        # `n_labels * n_features` is number of parameters for unary potentials
+        # `n_labels * n_features` is number of parameters for unary potentials.
         # `n_labels ** 2` is number of parameters for pair-wise potentials
-        # between labels
+        # between labels.
         self.size_joint_feature = self.n_labels * self.n_features + self.n_labels ** 2
 
         # Infer `class_weight` from data.
@@ -78,22 +79,117 @@ class ChainCRF():
             self.uniform_class_weight = True
 
     def joint_feature(self,
-                      x,
-                      y) -> np.ndarray:
+                      x: np.ndarray,
+                      y: np.ndarray) -> np.ndarray:
         """
-        Feature vector associated with instance (x, y).
-
-        Called by `batch_joint_feature`.
+        Feature vector of length `n_labels * n_features + n_labels ** 2`.
+        Contains the unary and pairwise features.
 
         Args:
             x:
+                numpy array of shape (n_nodes, n_features).
             y:
+                numpy vector of length `n_nodes`.
+                Labels should be encoded as integers of 0 to `n_labels - 1`.
         """
+        edges = make_chain_edges(x)
+        n_nodes = x.shape[0]
+
+        # One-hot encode label for each node.
+        y_one_hot = np.zeros((n_nodes, self.n_labels), dtype=np.int)
+        y_one_hot[np.arange(n_nodes), y] = 1
+
+        # Pairwise features of shape (n_labels, n_labels).
+        # Stores the count of label-label transitions observed in `y`.
+        pairwise = y_one_hot[edges[:, 0]].T @ y_one_hot[edges[:, 1]]
+
+        # Unary features of shape (n_labels, n_features).
+        # If the features are one-hot encodings, this stores the count
+        # of feature-label correlation observed in `x` and `y`.
+        unary = y_one_hot.T @ x
+
+        # Unary and pairwise features are ravel into an 1-D feature vector.
+        joint_feature_vector = np.hstack([unary.ravel(), pairwise.ravel()])
+        return joint_feature_vector
+
 
     def batch_joint_feature(self,
-                            X,
-                            Y):
+                            X: List[np.ndarray],
+                            Y: List[np.ndarray]) -> np.ndarray:
+        """
+        Summed feature vector across data batch of length
+        `n_labels * n_features + n_labels ** 2`.
 
-    def batch_lose(self):
+        Args: see `initialize` method.
+        """
+        summed_joint_feature = np.zeros(self.size_joint_feature)
+        for x, y in zip(X, Y):
+            summed_joint_feature += self.joint_feature(x, y)
+        return summed_joint_feature
 
-    def batch_loss_augmented_inference(self):
+    def loss(self,
+             y: np.ndarray,
+             y_hat: np.ndarray) -> int:
+        """
+        Hamming loss, i.e. count of nodes where `y != y_hat`.
+
+        Args:
+            y: see `joint_feature` method.
+            y_hat: Labels prediction. numpy vector of length `n_nodes`.
+        """
+        if self.class_weight:
+            return np.sum(self.class_weight[y] * (y != y_hat))
+        return np.sum(y != y_hat)
+
+    def batch_loss(self,
+                   Y: List[np.ndarray],
+                   Y_hat: List[np.ndarray]) -> List[int]:
+        """
+        Loss of each row in the data batch.
+
+        Args:
+            Y: see `initialize` method.
+            Y_hat:
+                List of labels prediction,
+                which are numpy vectors of length `n_nodes`.
+        """
+        return [self.loss(y, y_hat) for y, y_hat in zip(Y, Y_hat)]
+    
+    def loss_augmented_inference(self,
+                                 x: np.ndarray,
+                                 y: np.ndarray,
+                                 w: np.ndarray):
+        """
+
+        """
+
+    def batch_loss_augmented_inference(self,
+                                       X: List[np.ndarray],
+                                       Y: List[np.ndarray],
+                                       w: np.ndarray):
+
+
+def make_chain_edges(x: np.ndarray) -> np.ndarray:
+    """
+    Linear chain edges of shape (n_nodes - 1, 2).
+
+    Each row denotes an edge connection between two vertexes representing
+    the graph.
+
+    For example, if `n_nodes = 3`, this should return:
+    ```
+    array([[0, 1],
+           [1, 2]])
+    ```
+
+    Args:
+        x:
+            numpy array of shape (n_nodes, n_features).
+    """
+    n_nodes = x.shape[0]
+    vertices = np.arange(n_nodes)
+    edge_begin = vertices[:-1, np.newaxis]
+    edge_end = vertices[1:, np.newaxis]
+    edges = np.concatenate([edge_begin, edge_end], axis=1)
+    return edges
+
