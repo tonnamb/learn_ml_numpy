@@ -169,9 +169,13 @@ class ChainCRF():
         Inference for x using parameters w.
 
         Finds (approximately)
-        argmin_y_hat w @ joint_feature(x, y_hat) + loss(y, y_hat)
+        argmax_y_hat w @ joint_feature(x, y_hat)
 
         Returns labels prediction as numpy vector of length `n_nodes`.
+
+        Note that this finds the argmax of the combined potentials, which
+        means the 'potentials' are more of a 'likelihood' than a 'potential'
+        in the thermodynamic sense.
 
         Args:
             x: see `joint_feature` method.
@@ -192,7 +196,7 @@ class ChainCRF():
         Loss-augmented inference for x relative to y using parameters w.
 
         Finds (approximately)
-        argmin_y_hat w @ joint_feature(x, y_hat) + loss(y, y_hat)
+        argmax_y_hat w @ joint_feature(x, y_hat) + loss(y, y_hat)
 
         Returns labels prediction as numpy vector of length `n_nodes`.
 
@@ -326,8 +330,17 @@ def inference_viterbi(unary_potentials: np.ndarray,
     """
     n_nodes = unary_potentials.shape[0]
     n_labels = unary_potentials.shape[1]
-    max_values = np.zeros((n_nodes, n_labels))
-    max_indices = np.zeros((n_nodes, n_labels))
 
     # Forward recursion.
+    unary_lag = np.tile(unary_potentials[:-1, :, np.newaxis], (1, 1, 2))
+    unary_lead = np.tile(unary_potentials[1:, :, np.newaxis], (1, 1, 2))
+    pairwise = np.tile(pairwise_potentials[np.newaxis, :, :], (n_nodes - 1, 1, 1))
+    candidates = unary_lag + unary_lead + pairwise
+
+    max_values = np.max(candidates, axis=2)
+    max_indices = np.argmax(candidates, axis=2)
+
+    # Path backtracking
+    y_pred = np.zeros(n_nodes, dtype=np.intp)
+    y_pred[-1] = np.argmax(max_values[-1])
 
