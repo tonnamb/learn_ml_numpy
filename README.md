@@ -5,12 +5,7 @@ by implementing it in NumPy
 # Algorithms
 ## Implemented
 * Linear regression (linear_regression.py)
-
-## In-progress
-* Conditional random field (crf.py)
-
-## Planned
-* Fully connected feed forward neural network
+* Conditional random field (crf_pystruct.py)
 
 # Getting started
 Setup the python virtual environment by:

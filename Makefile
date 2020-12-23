@@ -21,7 +21,4 @@ linear: pyvenv
 	pyvenv/bin/python -i src/linear_regression.py
 
 crf: pyvenv
-	pyvenv/bin/python -i src/crf.py
-
-crf_pystruct: pyvenv
 	pyvenv/bin/python -i src/crf_pystruct.py
