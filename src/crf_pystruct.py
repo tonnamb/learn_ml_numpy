@@ -131,6 +131,8 @@ class ChainCRF():
 
         Called by learner during `fit`.
 
+        NOTE: currently not in used.
+
         Args: see `initialize` method.
         """
         summed_joint_feature = np.zeros(self.size_joint_feature)
@@ -148,8 +150,8 @@ class ChainCRF():
             y: see `joint_feature` method.
             y_hat: Labels prediction. numpy vector of length `n_nodes`.
         """
-        # if self.class_weight is not None:
-        #     return np.sum(self.class_weight[y] * (y != y_hat))
+        if self.class_weight is not None:
+            return np.sum(self.class_weight[y] * np.not_equal(y, y_hat))
         return np.sum(np.not_equal(y, y_hat))
 
     def batch_loss(self,
@@ -166,6 +168,15 @@ class ChainCRF():
         """
         return [self.loss(y, y_hat) for y, y_hat in zip(Y, Y_hat)]
 
+    def max_loss(self,
+                 y: np.ndarray) -> float:
+        """
+        Maximum possible loss on y for macro averages.
+        """
+        if self.class_weight is not None:
+            return np.sum(self.class_weight[y])
+        return float(len(y))
+
     def inference(self,
                   x: np.ndarray,
                   w: np.ndarray) -> np.ndarray:
@@ -179,7 +190,7 @@ class ChainCRF():
 
         Returns labels prediction as numpy vector of length `n_nodes`.
 
-        Note that this finds the argmax of the combined potentials, which
+        NOTE: this finds the argmax of the combined potentials, which
         means the 'potentials' are more of a 'likelihood' than a 'potential'
         in the thermodynamic sense.
 
@@ -206,6 +217,8 @@ class ChainCRF():
 
         Returns labels prediction as numpy vector of length `n_nodes`.
 
+        NOTE: currently not in-used.
+
         Args:
             x: see `joint_feature` method.
             y:
@@ -227,6 +240,8 @@ class ChainCRF():
                                        w: np.ndarray):
         """
         Make inference for each row of data given w as model parameter.
+
+        NOTE: currently not in-used.
 
         Args:
             X: see `initialize` method.
@@ -278,6 +293,8 @@ class ChainCRF():
 
         Only add class weight when the label is not equal to the observed y
         for the node.
+
+        NOTE: currently not in-used.
 
         Args:
             unary_potentials: numpy array of shape (n_nodes, n_labels).
@@ -369,7 +386,11 @@ class DownhillSimplexLearner():
         self.model = model
         self.w = None
 
-    def fit(self, X, Y):
+    def fit(self,
+            X: List[np.array],
+            Y: List[np.array],
+            *,
+            maxiter: int = 1000):
         """
         Fit to data.
 
@@ -390,11 +411,41 @@ class DownhillSimplexLearner():
         self.w = np.random.normal(loc=1.0,
                                   scale=1e-5,
                                   size=self.model.size_joint_feature)
-        self.w = fmin(regularized_loss, x0=self.w)
+        self.w = fmin(regularized_loss, x0=self.w, maxiter=maxiter)
         return self
 
+    def predict(self,
+                X: List[np.array]) -> List[np.array]:
+        """
+        Predict labels on examples in X.
+        """
+        return [self.model.inference(x, self.w) for x in X]
+    
+    def score(self,
+              X: List[np.array],
+              Y: List[np.array]) -> float:
+        """
+        Compute score as 1 - loss over whole data set.
+        """
+        losses = self.model.batch_loss(Y, self.predict(X))
+        max_losses = [self.model.max_loss(y) for y in Y]
+        return 1. - np.sum(losses) / float(np.sum(max_losses))
 
-def prepare(data: CoNLLChunking, *,
+
+def sample(data: CoNLLChunking, n: int) -> CoNLLChunking:
+    """
+    Sample n instances of the data.
+    """
+    out = CoNLLChunking()
+    for i in range(n):
+        out.word.append(data.word[i])
+        out.pos.append(data.pos[i])
+        out.label.append(data.label[i])
+    return out
+
+
+def prepare(data: CoNLLChunking,
+            *,
             vocab_to_int: Dict[str, int] = None,
             pos_to_int: Dict[str, int] = None,
             label_to_int: Dict[str, int] = None,
@@ -463,16 +514,53 @@ def prepare(data: CoNLLChunking, *,
     n_labels = len(label_to_int)
     Y = []
     for sample_idx, sample in enumerate(data.label):
-        Y.append(np.zeros(n_labels, dtype=np.intp))
-        for label in sample:
+        n_nodes = len(sample)
+        Y.append(np.zeros(n_nodes, dtype=np.intp))
+        for node_idx, label in enumerate(sample):
             label_int = label_to_int[label]
-            Y[sample_idx][label_int] = 1
+            Y[sample_idx][node_idx] = label_int
     return X, Y, vocab_to_int, pos_to_int, label_to_int
+
+
+def demo_prediction(data_idx: int,
+                    learner: DownhillSimplexLearner,
+                    X: List[np.ndarray],
+                    sample: CoNLLChunking,
+                    int_to_label: Dict[int, str]) -> None:
+    y_pred = learner.predict([X[data_idx]])
+    pred_label = [int_to_label[number] for number in y_pred[0]]
+    print('{: >20} {: >20} {: >20}'.format('x', 'y', 'y_pred'))
+    for x, y, y_pred in zip(sample.word[data_idx],
+                            sample.label[data_idx],
+                            pred_label):
+        print(f'{x: >20} {y: >20} {y_pred: >20}')
 
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
-    X_train, Y_train, vocab_to_int, pos_to_int, label_to_int = prepare(train)
+    train_sample = sample(train, 10)
+    X_train, Y_train, vocab_to_int, pos_to_int, label_to_int = prepare(train_sample)
     crf = ChainCRF()
     learner = DownhillSimplexLearner(crf)
-    learner.fit(X_train, Y_train)
+
+    print('Training for 1,000 iterations')
+    learner.fit(X_train, Y_train, maxiter=1000)
+    score_1 = learner.score(X_train, Y_train)
+    print(f'Score after 1,000 iterations: {score_1:.3f}')
+
+    int_to_label = {number: label for label, number in label_to_int.items()}
+    print('Demo prediction:')
+    demo_prediction(0, learner, X_train, train_sample, int_to_label)
+
+    print('Training for 3,000 iterations')
+    learner.fit(X_train, Y_train, maxiter=3000)
+    score_2 = learner.score(X_train, Y_train)
+    print(f'Score after 3,000 iterations: {score_2:.3f}')
+
+    print('Training for 5,000 iterations')
+    learner.fit(X_train, Y_train, maxiter=5000)
+    score_2 = learner.score(X_train, Y_train)
+    print(f'Score after 5,000 iterations: {score_2:.3f}')
+
+    print('Demo prediction:')
+    demo_prediction(0, learner, X_train, train_sample, int_to_label)
