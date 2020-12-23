@@ -1,4 +1,5 @@
 numpy
+scipy
 sympy
 flake8
 mypy

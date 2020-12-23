@@ -22,3 +22,6 @@ linear: pyvenv
 
 crf: pyvenv
 	pyvenv/bin/python -i src/crf.py
+
+crf_pystruct: pyvenv
+	pyvenv/bin/python -i src/crf_pystruct.py

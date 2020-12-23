@@ -3,11 +3,12 @@
 
 Reference: https://github.com/pystruct/pystruct
 """
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
+from scipy.optimize import fmin
 
-from crf import labels, prepare, read_conll_2000_chunking
+from crf import read_conll_2000_chunking, CoNLLChunking
 
 
 NEG_INF = -np.inf
@@ -79,7 +80,8 @@ class ChainCRF():
         if self.class_weight is not None:
             if len(self.class_weight) != self.n_labels:
                 raise ValueError("`class_weight` must have length of `n_labels`."
-                                 f"{self.class_weight=}, {self.n_labels=}")
+                                 f"`class_weight={self.class_weight}`, "
+                                 f"`n_labels={self.n_labels}.`")
             self.class_weight = np.array(self.class_weight)
             self.uniform_class_weight = False
         else:
@@ -146,9 +148,9 @@ class ChainCRF():
             y: see `joint_feature` method.
             y_hat: Labels prediction. numpy vector of length `n_nodes`.
         """
-        if self.class_weight:
-            return np.sum(self.class_weight[y] * (y != y_hat))
-        return np.sum(y != y_hat)
+        # if self.class_weight is not None:
+        #     return np.sum(self.class_weight[y] * (y != y_hat))
+        return np.sum(np.not_equal(y, y_hat))
 
     def batch_loss(self,
                    Y: List[np.ndarray],
@@ -214,7 +216,7 @@ class ChainCRF():
         unary_potentials = self._get_unary_potentials(x, w)
         pairwise_potentials = self._get_pairwise_potentials(w)
 
-        if self.class_weight:
+        if self.class_weight is not None:
             self.loss_augment_unaries(unary_potentials, y, w)
 
         return inference_viterbi(unary_potentials, pairwise_potentials)
@@ -347,9 +349,11 @@ def inference_viterbi(unary_potentials: np.ndarray,
 
     # Backward pass.
     y_pred = np.zeros(n_nodes, dtype=np.intp)
-    y_pred[-1] = np.argmax(max_values[-1])
+    if n_nodes > 1:
+        y_pred[-1] = max_values[n_nodes - 2, :].argmax()
     for node_idx in range(n_nodes - 2, -1, -1):
         y_pred[node_idx] = max_indices[node_idx, y_pred[node_idx + 1]]
+    return y_pred
 
 
 class DownhillSimplexLearner():
@@ -363,7 +367,7 @@ class DownhillSimplexLearner():
             model: model instance, e.g. ChainCRF instance
         """
         self.model = model
-        self.w = np.random.normal(loc=1.0, scale=1e-5)
+        self.w = None
 
     def fit(self, X, Y):
         """
@@ -383,11 +387,92 @@ class DownhillSimplexLearner():
             reg_loss /= float(len(X))
             reg_loss += np.sum(w ** 2)
             return reg_loss
-        self.w = fmin(func, x0=self.w)
+        self.w = np.random.normal(loc=1.0,
+                                  scale=1e-5,
+                                  size=self.model.size_joint_feature)
+        self.w = fmin(regularized_loss, x0=self.w)
         return self
+
+
+def prepare(data: CoNLLChunking, *,
+            vocab_to_int: Dict[str, int] = None,
+            pos_to_int: Dict[str, int] = None,
+            label_to_int: Dict[str, int] = None,
+            ) -> Tuple[List[np.ndarray],
+                       List[np.ndarray],
+                       Dict[str, int],
+                       Dict[str, int],
+                       Dict[str, int]]:
+    """
+    Prepare CoNLL chunking data for the CRF model.
+
+    Args:
+        data: CoNLL 2000 Chunking data
+        vocab_to_int, pos_to_int, label_to_int:
+            When mappings are passed in, it will use it instead of building
+            new mappings.
+
+    Returns:
+        X:
+            Shape of (n_samples, n_nodes, n_features), where the features
+            are concatenated one-hot vectors of the word and part-of-speech.
+        Y:
+            Shape of (n_samples, n_nodes).
+        vocab_to_int:
+            Mapping of word to index.
+        pos_to_int:
+            Mapping of part-of-speech to index.
+        label_to_int:
+            Mapping of label to index.
+    """
+    if vocab_to_int is None and pos_to_int is None:
+        # Build vocab and pos mappings.
+        vocab_to_int = {}
+        pos_to_int = {}
+        idx_feature = 0
+        for word_sample, pos_sample in zip(data.word, data.pos):
+            for word, pos in zip(word_sample, pos_sample):
+                if word not in vocab_to_int:
+                    vocab_to_int[word] = idx_feature
+                    idx_feature += 1
+                if pos not in pos_to_int:
+                    pos_to_int[pos] = idx_feature
+                    idx_feature += 1
+
+    # Build one-hot vectors
+    n_vocab = len(vocab_to_int)
+    n_pos = len(pos_to_int)
+    n_features = n_vocab + n_pos
+    X = []
+    for sample, (word_sample, pos_sample) in enumerate(zip(data.word,
+                                                           data.pos)):
+        X.append(np.zeros((len(word_sample), n_features)))
+        for word_idx, (word, pos) in enumerate(zip(word_sample, pos_sample)):
+            vocab_int = vocab_to_int[word]
+            pos_int = pos_to_int[pos]
+            X[sample][word_idx, vocab_int] = 1
+            X[sample][word_idx, pos_int] = 1
+    if label_to_int is None:
+        label_to_int = {}
+        idx_label = 0
+        for sample_idx, sample in enumerate(data.label):
+            for label in sample:
+                if label not in label_to_int:
+                    label_to_int[label] = idx_label
+                    idx_label += 1
+    n_labels = len(label_to_int)
+    Y = []
+    for sample_idx, sample in enumerate(data.label):
+        Y.append(np.zeros(n_labels, dtype=np.intp))
+        for label in sample:
+            label_int = label_to_int[label]
+            Y[sample_idx][label_int] = 1
+    return X, Y, vocab_to_int, pos_to_int, label_to_int
 
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
-    labels_train = labels(train)
-    X_train, y_train, vocab_to_int, pos_to_int = prepare(train)
+    X_train, Y_train, vocab_to_int, pos_to_int, label_to_int = prepare(train)
+    crf = ChainCRF()
+    learner = DownhillSimplexLearner(crf)
+    learner.fit(X_train, Y_train)
