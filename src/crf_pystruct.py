@@ -2,6 +2,97 @@
 `pystruct`-style implementation of the CRF.
 
 Reference: https://github.com/pystruct/pystruct
+
+Example output:
+```
+$ make crf_pystruct
+pyvenv/bin/python -i src/crf_pystruct.py
+Training for 1,000 iterations
+Warning: Maximum number of iterations has been exceeded.
+Score after 1,000 iterations: 0.455
+                   x                    y               y_pred
+          Confidence                 B-NP                 I-NP
+                  in                 B-PP                    O
+                 the                 B-NP               B-ADJP
+               pound                 I-NP                 I-NP
+                  is                 B-VP                 I-NP
+              widely                 I-VP               B-ADVP
+            expected                 I-VP                 I-NP
+                  to                 I-VP                 I-NP
+                take                 I-VP                 I-NP
+             another                 B-NP                 I-NP
+               sharp                 I-NP                 I-NP
+                dive                 I-NP                 I-NP
+                  if               B-SBAR                 B-PP
+               trade                 B-NP                 I-NP
+             figures                 I-NP                 I-NP
+                 for                 B-PP                 B-PP
+           September                 B-NP                 I-NP
+                   ,                    O                 I-NP
+                 due               B-ADJP                 I-NP
+                 for                 B-PP                 B-PP
+             release                 B-NP                 I-NP
+            tomorrow                 B-NP                 I-NP
+                   ,                    O                 I-NP
+                fail                 B-VP                 I-NP
+                  to                 I-VP                 I-NP
+                show                 I-VP                    O
+                   a                 B-NP               B-ADJP
+         substantial                 I-NP                 I-NP
+         improvement                 I-NP                 I-NP
+                from                 B-PP                 B-PP
+                July                 B-NP                 I-NP
+                 and                 I-NP                 I-NP
+              August                 I-NP                 I-NP
+                  's                 B-NP                 I-NP
+         near-record                 I-NP                 I-NP
+            deficits                 I-NP                 B-PP
+                   .                    O                    O
+Training for 3,000 iterations
+Warning: Maximum number of iterations has been exceeded.
+Score after 3,000 iterations: 0.683
+Training for 5,000 iterations
+Warning: Maximum number of iterations has been exceeded.
+Score after 5,000 iterations: 0.785
+                   x                    y               y_pred
+          Confidence                 B-NP                 B-NP
+                  in                 B-PP                 B-PP
+                 the                 B-NP                 B-NP
+               pound                 I-NP                 I-NP
+                  is                 B-VP                 B-VP
+              widely                 I-VP                 B-NP
+            expected                 I-VP               B-ADVP
+                  to                 I-VP                 B-VP
+                take                 I-VP                 I-VP
+             another                 B-NP                 B-NP
+               sharp                 I-NP                 I-NP
+                dive                 I-NP                 I-NP
+                  if               B-SBAR                 B-NP
+               trade                 B-NP                 I-NP
+             figures                 I-NP                 I-NP
+                 for                 B-PP                 B-PP
+           September                 B-NP                 B-NP
+                   ,                    O                 I-VP
+                 due               B-ADJP                 B-NP
+                 for                 B-PP                 B-PP
+             release                 B-NP                 B-NP
+            tomorrow                 B-NP                 I-NP
+                   ,                    O                    O
+                fail                 B-VP               I-ADVP
+                  to                 I-VP                 B-VP
+                show                 I-VP                 I-VP
+                   a                 B-NP                 B-NP
+         substantial                 I-NP                 I-NP
+         improvement                 I-NP                 I-NP
+                from                 B-PP                 B-PP
+                July                 B-NP                 B-NP
+                 and                 I-NP                 I-NP
+              August                 I-NP                 I-NP
+                  's                 B-NP                 B-NP
+         near-record                 I-NP                 I-NP
+            deficits                 I-NP                 I-NP
+                   .                    O                    O
+```
 """
 from typing import Dict, List, Tuple
 
