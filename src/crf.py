@@ -4,6 +4,9 @@ Conditional random field (CRF) implementation and demo.
 Reference:
 - Sutton C, McCallum A. An introduction to conditional random fields.
   2011. https://homepages.inf.ed.ac.uk/csutton/publications/crftut-fnt.pdf
+
+NOTE: This doesn't seem to work as the log-loss would tend to overflow right
+right after the first weight update.
 """
 import random
 from dataclasses import dataclass, field

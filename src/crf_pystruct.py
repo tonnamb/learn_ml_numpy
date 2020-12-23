@@ -93,6 +93,10 @@ Score after 5,000 iterations: 0.785
             deficits                 I-NP                 I-NP
                    .                    O                    O
 ```
+
+NOTE: The optimization step is still pretty slow as we just using the downhill
+simplex algorithm. It takes pretty long (~1000 iterations for 1 hour) to even
+train with 100 samples.
 """
 from typing import Dict, List, Tuple
 
@@ -263,6 +267,9 @@ class ChainCRF():
                  y: np.ndarray) -> float:
         """
         Maximum possible loss on y for macro averages.
+
+        Args:
+            y: see `joint_feature` method.
         """
         if self.class_weight is not None:
             return np.sum(self.class_weight[y])
@@ -486,8 +493,9 @@ class DownhillSimplexLearner():
         Fit to data.
 
         Args:
-            X: see `initialize` method.
-            Y: see `initialize` method.
+            X: see `ChainCRF.initialize` method.
+            Y: see `ChainCRF.initialize` method.
+            maxiter: max iterations of the optimization.
         """
         self.model.initialize(X, Y)
         def regularized_loss(w):
@@ -509,6 +517,9 @@ class DownhillSimplexLearner():
                 X: List[np.array]) -> List[np.array]:
         """
         Predict labels on examples in X.
+
+        Args:
+            X: see `ChainCRF.initialize` method.
         """
         return [self.model.inference(x, self.w) for x in X]
     
@@ -517,6 +528,10 @@ class DownhillSimplexLearner():
               Y: List[np.array]) -> float:
         """
         Compute score as 1 - loss over whole data set.
+
+        Args:
+            X: see `ChainCRF.initialize` method.
+            Y: see `ChainCRF.initialize` method.
         """
         losses = self.model.batch_loss(Y, self.predict(X))
         max_losses = [self.model.max_loss(y) for y in Y]
@@ -526,6 +541,10 @@ class DownhillSimplexLearner():
 def sample(data: CoNLLChunking, n: int) -> CoNLLChunking:
     """
     Sample n instances of the data.
+
+    Args:
+        data: CoNLL Chunking data set.
+        n: Number of instances to sample.
     """
     out = CoNLLChunking()
     for i in range(n):
@@ -618,6 +637,16 @@ def demo_prediction(data_idx: int,
                     X: List[np.ndarray],
                     sample: CoNLLChunking,
                     int_to_label: Dict[int, str]) -> None:
+    """
+    Demonstrate a prediction for 1 data point.
+
+    Args:
+        data_idx: Index of the 1 data point.
+        learner: Trained learner.
+        X: see `ChainCRF.initialize` method.
+        sample: Sampled CoNLL chunking data set.
+        int_to_label: Mapping of integer to label.
+    """
     y_pred = learner.predict([X[data_idx]])
     pred_label = [int_to_label[number] for number in y_pred[0]]
     print('{: >20} {: >20} {: >20}'.format('x', 'y', 'y_pred'))
