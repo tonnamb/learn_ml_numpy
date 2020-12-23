@@ -7,6 +7,8 @@ from typing import List, Tuple
 
 import numpy as np
 
+from crf import labels, prepare, read_conll_2000_chunking
+
 
 NEG_INF = -np.inf
 
@@ -171,6 +173,8 @@ class ChainCRF():
         Finds (approximately)
         argmax_y_hat w @ joint_feature(x, y_hat)
 
+        Called by learner during `fit`.
+
         Returns labels prediction as numpy vector of length `n_nodes`.
 
         Note that this finds the argmax of the combined potentials, which
@@ -221,8 +225,6 @@ class ChainCRF():
                                        w: np.ndarray):
         """
         Make inference for each row of data given w as model parameter.
-
-        Called by learner during `fit`.
 
         Args:
             X: see `initialize` method.
@@ -331,16 +333,61 @@ def inference_viterbi(unary_potentials: np.ndarray,
     n_nodes = unary_potentials.shape[0]
     n_labels = unary_potentials.shape[1]
 
-    # Forward recursion.
-    unary_lag = np.tile(unary_potentials[:-1, :, np.newaxis], (1, 1, 2))
-    unary_lead = np.tile(unary_potentials[1:, :, np.newaxis], (1, 1, 2))
-    pairwise = np.tile(pairwise_potentials[np.newaxis, :, :], (n_nodes - 1, 1, 1))
+    # Forward pass.
+    unary_lag = np.tile(unary_potentials[:-1, np.newaxis, :], (1, n_labels, 1))
+    unary_lead = np.tile(unary_potentials[1:, :, np.newaxis], (1, 1, n_labels))
+    # Transpose is needed to make candidates for each node be transitions that
+    # varies in the lag node, and constant in the lead node.
+    # For example, A -> A, B -> A, C -> A.
+    pairwise = np.tile(pairwise_potentials.T[np.newaxis, :, :], (n_nodes - 1, 1, 1))
     candidates = unary_lag + unary_lead + pairwise
 
     max_values = np.max(candidates, axis=2)
     max_indices = np.argmax(candidates, axis=2)
 
-    # Path backtracking
+    # Backward pass.
     y_pred = np.zeros(n_nodes, dtype=np.intp)
     y_pred[-1] = np.argmax(max_values[-1])
+    for node_idx in range(n_nodes - 2, -1, -1):
+        y_pred[node_idx] = max_indices[node_idx, y_pred[node_idx + 1]]
 
+
+class DownhillSimplexLearner():
+    """
+    Learn weight parameters using the downhill simplex algothm to minimize
+    the loss function.
+    """
+    def __init__(self, model: ChainCRF):
+        """
+        Args:
+            model: model instance, e.g. ChainCRF instance
+        """
+        self.model = model
+        self.w = np.random.normal(loc=1.0, scale=1e-5)
+
+    def fit(self, X, Y):
+        """
+        Fit to data.
+
+        Args:
+            X: see `initialize` method.
+            Y: see `initialize` method.
+        """
+        self.model.initialize(X, Y)
+        def regularized_loss(w):
+            """Function to pass into `scipy.optimize.fmin`"""
+            reg_loss = 0
+            for x, y in zip(X, Y):
+                y_hat = self.model.inference(x, w)
+                reg_loss += self.model.loss(y, y_hat)
+            reg_loss /= float(len(X))
+            reg_loss += np.sum(w ** 2)
+            return reg_loss
+        self.w = fmin(func, x0=self.w)
+        return self
+
+
+if __name__ == "__main__":
+    train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
+    labels_train = labels(train)
+    X_train, y_train, vocab_to_int, pos_to_int = prepare(train)
