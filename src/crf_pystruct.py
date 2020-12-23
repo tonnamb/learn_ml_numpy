@@ -5,7 +5,7 @@ Reference: https://github.com/pystruct/pystruct
 
 Example output:
 ```
-$ make crf_pystruct
+$ make crf
 pyvenv/bin/python -i src/crf_pystruct.py
 Training for 1,000 iterations
 Warning: Maximum number of iterations has been exceeded.
