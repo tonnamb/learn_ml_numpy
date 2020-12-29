@@ -93,10 +93,6 @@ Score after 5,000 iterations: 0.785
             deficits                 I-NP                 I-NP
                    .                    O                    O
 ```
-
-NOTE: The optimization step is still pretty slow as we just using the downhill
-simplex algorithm. It takes pretty long (~1000 iterations for 1 hour) to even
-train with 100 samples.
 """
 from typing import Dict, List, Tuple
 
@@ -496,6 +492,11 @@ class DownhillSimplexLearner():
             X: see `ChainCRF.initialize` method.
             Y: see `ChainCRF.initialize` method.
             maxiter: max iterations of the optimization.
+
+        NOTE: The downhill simplex ('Nelder-Mead' method) requires O(n^2)
+        memory to just store the vertices of the simplex. Without limiting
+        the number of features, the memory usage can go above 60 GB and
+        cause the program to be killed by the OS.
         """
         self.model.initialize(X, Y)
         def regularized_loss(w):
@@ -658,6 +659,8 @@ def demo_prediction(data_idx: int,
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
+    # Currently limiting to just 10 training items because the downhill
+    # simplex optimization method takes up too much memory.
     train_sample = sample(train, 10)
     X_train, Y_train, vocab_to_int, pos_to_int, label_to_int = prepare(train_sample)
     crf = ChainCRF()
