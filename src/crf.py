@@ -407,6 +407,10 @@ def read_conll_2000_chunking(file_path: str) -> CoNLLChunking:
                 out.word[sample_idx].append(word)
                 out.pos[sample_idx].append(part_of_speech)
                 out.label[sample_idx].append(label)
+    if len(out.word[-1]) == 0:
+        out.word.pop()
+        out.pos.pop()
+        out.label.pop()
     return out
 
 

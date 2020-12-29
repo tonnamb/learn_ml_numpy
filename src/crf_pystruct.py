@@ -97,7 +97,7 @@ Score after 5,000 iterations: 0.785
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.optimize import fmin
+from scipy.optimize import minimize
 
 from crf import read_conll_2000_chunking, CoNLLChunking
 
@@ -467,10 +467,9 @@ def inference_viterbi(unary_potentials: np.ndarray,
     return y_pred
 
 
-class DownhillSimplexLearner():
+class ScipyMinimizeLearner():
     """
-    Learn weight parameters using the downhill simplex algothm to minimize
-    the loss function.
+    Learn weight parameters using the `scipy.optimize.minimize` function.
     """
     def __init__(self, model: ChainCRF):
         """
@@ -484,7 +483,9 @@ class DownhillSimplexLearner():
             X: List[np.array],
             Y: List[np.array],
             *,
-            maxiter: int = 1000):
+            maxiter: int = 100,
+            method: str = 'BFGS',
+            progress_freq: int = 1000):
         """
         Fit to data.
 
@@ -492,6 +493,7 @@ class DownhillSimplexLearner():
             X: see `ChainCRF.initialize` method.
             Y: see `ChainCRF.initialize` method.
             maxiter: max iterations of the optimization.
+            method: optimization method.
 
         NOTE: The downhill simplex ('Nelder-Mead' method) requires O(n^2)
         memory to just store the vertices of the simplex. Without limiting
@@ -499,19 +501,28 @@ class DownhillSimplexLearner():
         cause the program to be killed by the OS.
         """
         self.model.initialize(X, Y)
-        def regularized_loss(w):
+        def regularized_loss(w, model, meta):
             """Function to pass into `scipy.optimize.fmin`"""
             reg_loss = 0
             for x, y in zip(X, Y):
-                y_hat = self.model.inference(x, w)
-                reg_loss += self.model.loss(y, y_hat)
+                y_hat = model.inference(x, w)
+                reg_loss += model.loss(y, y_hat)
             reg_loss /= float(len(X))
             reg_loss += np.sum(w ** 2)
+            if meta['n_func_eval'] % progress_freq == 0:
+                print(f'n_func_eval: {meta["n_func_eval"]}, Loss: {reg_loss:.3f}')
+            meta['n_func_eval'] += 1
             return reg_loss
         self.w = np.random.normal(loc=1.0,
                                   scale=1e-5,
                                   size=self.model.size_joint_feature)
-        self.w = fmin(regularized_loss, x0=self.w, maxiter=maxiter)
+        opt_result = minimize(regularized_loss,
+                              x0=self.w,
+                              args=(self.model, {'n_func_eval': 0}),
+                              method=method,
+                              options={'maxiter': maxiter})
+        print(opt_result.message)
+        self.w = opt_result.x
         return self
 
     def predict(self,
@@ -608,6 +619,9 @@ def prepare(data: CoNLLChunking,
     X = []
     for sample, (word_sample, pos_sample) in enumerate(zip(data.word,
                                                            data.pos)):
+        if len(word_sample) == 0:
+            print('Skipping a sentence with 0 words.')
+            continue
         X.append(np.zeros((len(word_sample), n_features)))
         for word_idx, (word, pos) in enumerate(zip(word_sample, pos_sample)):
             vocab_int = vocab_to_int[word]
@@ -634,7 +648,7 @@ def prepare(data: CoNLLChunking,
 
 
 def demo_prediction(data_idx: int,
-                    learner: DownhillSimplexLearner,
+                    learner: ScipyMinimizeLearner,
                     X: List[np.ndarray],
                     sample: CoNLLChunking,
                     int_to_label: Dict[int, str]) -> None:
@@ -659,31 +673,17 @@ def demo_prediction(data_idx: int,
 
 if __name__ == "__main__":
     train = read_conll_2000_chunking('data/conll_2000_chunking_train.txt')
-    # Currently limiting to just 10 training items because the downhill
-    # simplex optimization method takes up too much memory.
     train_sample = sample(train, 10)
     X_train, Y_train, vocab_to_int, pos_to_int, label_to_int = prepare(train_sample)
     crf = ChainCRF()
-    learner = DownhillSimplexLearner(crf)
+    learner = ScipyMinimizeLearner(crf)
 
-    print('Training for 1,000 iterations')
-    learner.fit(X_train, Y_train, maxiter=1000)
+    print('Start training:')
+    learner.fit(X_train, Y_train, method='Nelder-Mead')
     score_1 = learner.score(X_train, Y_train)
-    print(f'Score after 1,000 iterations: {score_1:.3f}')
+    print(f'Score: {score_1:.3f}')
 
     int_to_label = {number: label for label, number in label_to_int.items()}
     print('Demo prediction:')
     demo_prediction(0, learner, X_train, train_sample, int_to_label)
 
-    print('Training for 3,000 iterations')
-    learner.fit(X_train, Y_train, maxiter=3000)
-    score_2 = learner.score(X_train, Y_train)
-    print(f'Score after 3,000 iterations: {score_2:.3f}')
-
-    print('Training for 5,000 iterations')
-    learner.fit(X_train, Y_train, maxiter=5000)
-    score_2 = learner.score(X_train, Y_train)
-    print(f'Score after 5,000 iterations: {score_2:.3f}')
-
-    print('Demo prediction:')
-    demo_prediction(0, learner, X_train, train_sample, int_to_label)
